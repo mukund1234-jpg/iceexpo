@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-5">
+  {% if card %}
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-lg border-0 rounded-4 overflow-hidden">
+        <!-- Card Header -->
+        <div class="card-header text-center text-white p-4" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
+          <h4 class="mb-0">Business Card</h4>
+          
+        </div>
+        <!-- Card Body -->
+        <div class="card-body p-4">
+          <!-- Field -->
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold">Name</label>
+            <p class="fs-6">{{ card.name }}</p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold">Company</label>
+            <p class="fs-6">{{ card.company }}</p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold">Email</label>
+            <p class="fs-6">{{ card.email }}</p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold">Phone</label>
+            <p class="fs-6">{{ card.phone }}</p>
+          </div>
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold">Address</label>
+            <p class="fs-6">{{ card.address }}</p>
+          </div>
+          <div class="mb-3 text-end">
+            <a class="text-decoration-none mt-2 text-color-danger " href="{% url 'logout_view' %}">Log Out</a>
+          </div>  
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info text-center">
+    No business card found for this user.
+  </div>
+  {% endif %}
+</div>
+
+<style>
+
+.card:hover {
+  transform: translateY(-5px);
+  transition: 0.3s all ease;
+}
+
+a:hover {
+  background-color: rgba(255,255,255,0.2);
+  color: #f01212ff;
+}
+</style>
+{% endblock %}

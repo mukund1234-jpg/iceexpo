@@ -1,0 +1,121 @@
+
+<div class="col-md-6 mb-4">
+    <div class="card shadow-sm ">
+        <div class="card-header bg-success text-white text-center">
+            <h5 class="mb-0">About Card Information</h5>
+            {% if detected_lang %}
+            <span class="badge bg-light text-dark">Detected: {{ detected_lang|upper }}</span>
+            {% endif %}
+        </div>
+        <div class="card-body text-center">
+ <form method="POST" action="{% url 'save_card' %}">
+    {% csrf_token %}
+    <input type="hidden" name="filename" value="{{ filename }}">
+
+    <!-- Full Name -->
+    <div class="mb-3">
+        {% if name and name|length > 1 %}
+        <div class="input-group">
+            <select class="form-select" onchange="document.getElementById('name-input').value = this.value">
+                <option value="">Select name</option>
+                {% for n in name %}
+                <option value="{{ n }}" {% if n == primary_name %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" id="name-input" name="name" class="form-control"
+                   value="{{ primary_name }}" placeholder="Full Name">
+        </div>
+        {% else %}
+        <input type="text" id="name-input" name="name" class="form-control"
+               value="{{ primary_name }}" placeholder="Full Name">
+        {% endif %}
+    </div>
+
+    <!-- Designation -->
+    <div class="mb-3">
+        {% if designation and designation|length > 1 %}
+        <div class="input-group">
+            <select class="form-select" onchange="document.getElementById('de-input').value = this.value">
+                <option value="">Select designation</option>
+                {% for d in designation %}
+                <option value="{{ d }}" {% if d == primary_designation %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" id="de-input" name="designation" class="form-control"
+                   value="{{ primary_designation }}" placeholder="Designation">
+        </div>
+        {% else %}
+        <input type="text" id="de-input" name="designation" class="form-control"
+               value="{{ primary_designation }}" placeholder="Designation">
+        {% endif %}
+    </div>
+
+    <!-- Company -->
+    <div class="mb-3">
+        {% if company and company|length > 1 %}
+        <div class="input-group">
+            <select class="form-select" onchange="document.getElementById('company-input').value = this.value">
+                <option value="">Select company</option>
+                {% for c in company %}
+                <option value="{{ c }}" {% if c == primary_company %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" id="company-input" name="company" class="form-control"
+                   value="{{ primary_company }}" placeholder="Company Name">
+        </div>
+        {% else %}
+        <input type="text" id="company-input" name="company" class="form-control"
+               value="{{ primary_company }}" placeholder="Company Name">
+        {% endif %}
+    </div>
+
+    <!-- Address -->
+    <div class="mb-3">
+        <input type="text" id="address-input" name="address" class="form-control"
+               value="{{ address }}" placeholder="Address">
+    </div>
+
+    <!-- Email -->
+    <div class="mb-3">
+        {% if emails and emails|length > 1 %}
+        <div class="input-group">
+            <select class="form-select" onchange="document.getElementById('email-input').value = this.value">
+                <option value="">Select email</option>
+                {% for e in emails %}
+                <option value="{{ e }}" {% if e == primary_email %}selected{% endif %}>{{ e }}</option>
+                {% endfor %}
+            </select>
+            <input type="email" id="email-input" name="email" class="form-control"
+                   value="{{ primary_email }}" placeholder="example@email.com">
+        </div>
+        {% else %}
+        <input type="email" id="email-input" name="email" class="form-control"
+               value="{{ primary_email }}" placeholder="example@email.com">
+        {% endif %}
+    </div>
+
+    <!-- Phone -->
+    <div class="mb-3">
+        {% if phones and phones|length > 1 %}
+        <div class="input-group">
+            <select class="form-select" onchange="document.getElementById('phone-input').value = this.value">
+                <option value="">Select phone</option>
+                {% for ph in phones %}
+                <option value="{{ ph }}" {% if ph == primary_phone %}selected{% endif %}>{{ ph }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" id="phone-input" name="phone" class="form-control"
+                   value="{{ primary_phone }}" placeholder="Phone Number">
+        </div>
+        {% else %}
+        <input type="text" id="phone-input" name="phone" class="form-control"
+               value="{{ primary_phone }}" placeholder="Phone Number">
+        {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-success w-50">Save Business Card</button>
+</form>
+
+        </div>
+    </div>
+</div>

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid my-auto">
+  <!-- Loader overlay -->
+  <div id="loader-overlay" 
+       style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+              background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+              z-index: 1050; display: flex; align-items: center; justify-content: center; flex-direction: column; color: white;">
+    <div class="spinner-border text-light" role="status" style="width: 3rem; height: 3rem;"></div>
+    <p class="mt-3 fs-5">
+      please wait... 
+      <span id="processing-timer">0</span>
+    </p>
+  </div>
+
+  <div class="row my-3">
+    <div class="col-md-6 mb-2">
+      <!-- Single form for upload + webcam -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Upload or Capture Image</h5>
+          <form id="card-form" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            
+            <!-- File Upload -->
+            <label for="uploaded-image" class="form-label">Upload Image</label>
+            <input type="file" name="up_image" id="uploaded-image" accept="image/*" class="form-control mb-2">
+
+            <!-- Webcam Capture -->
+            <div class="mt-3">
+              <video id="webcam" autoplay playsinline width="320" height="240" class="border mb-2"></video>
+              <canvas id="canvas" style="display:none;"></canvas>
+              <input type="hidden" id="webcam-image" name="webcam_image">
+              <button type="button" onclick="captureImage()" class="btn btn-secondary w-100 mb-2">Capture from Webcam</button>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 mt-2">Submit</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDE FORM -->
+    {% include 'ocr/right_form.html' %}
+  </div>
+</div>
+
+<script>
+  const video = document.getElementById('webcam');
+  const canvas = document.getElementById('canvas');
+  const form = document.getElementById('card-form');
+  const loader = document.getElementById('loader-overlay');
+  const timerDisplay = document.getElementById('processing-timer');
+
+  let timerInterval;
+  let secondsElapsed = 0;
+
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+    } catch (err) {
+      console.warn("Camera access failed:", err);
+    }
+  }
+
+  function startTimer() {
+    secondsElapsed = 0;
+    timerDisplay.textContent = "(0s)";
+    timerInterval = setInterval(() => {
+      secondsElapsed++;
+      timerDisplay.textContent = `(${secondsElapsed}s)`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+  }
+
+  function captureImage() {
+    if (!video.videoWidth) return alert("Webcam not ready");
+
+    loader.style.display = "flex";
+    video.style.filter = "blur(2px) brightness(60%)";
+    startTimer();
+
+    setTimeout(() => {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.filter = "contrast(110%) brightness(105%)";
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Set hidden input value
+      const dataURL = canvas.toDataURL('image/jpeg', 1.0);
+      document.getElementById('webcam-image').value = dataURL;
+
+      stopTimer();
+      form.submit();
+    }, 500);
+  }
+
+  // Loader hide on page load
+  window.addEventListener('load', () => {
+    if (loader) loader.style.display = "none";
+    stopTimer();
+  });
+
+  startCamera();
+</script>
+{% endblock %}
