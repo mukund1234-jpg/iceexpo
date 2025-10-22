@@ -11,7 +11,7 @@ import spacy
 nlp = spacy.load("en_core_web_sm")
 
 # Multilingual NER (supports Marathi, Hindi, English, etc.)
-ner_model_multi = pipeline( "ner", 
+ner_model = pipeline( "ner", 
                            model="Davlan/xlm-roberta-large-ner-hrl",
                             aggregation_strategy="simple" )
 
@@ -92,12 +92,12 @@ def clean_ocr_text(text):
 # EXTRACTORS
 # ----------------------------
 def extract_name(text):
-    entities = ner_model_multi(text)
+    entities = ner_model(text)
     names = [ent['word'] for ent in entities if ent['entity_group'] in ['PER', 'PERSON']]
     return list(dict.fromkeys(names))
 
 def extract_company(text):
-    entities = ner_model_multi(text)
+    entities = ner_model(text)
     orgs = [ent['word'] for ent in entities if ent['entity_group'] in ['ORG', 'ORGANIZATION']]
     if orgs:
         return list(dict.fromkeys(orgs))
@@ -116,7 +116,7 @@ def extract_phones(text):
         cleaned = re.sub(r'[^\d\+]', '', num)
         try:
             match = phonenumbers.parse(cleaned, "IN")
-            print("Parsed Phone Number:", match)
+            # print("Parsed Phone Number:", match)
             if phonenumbers.is_valid_number(match):
                 e164 = phonenumbers.format_number(match, phonenumbers.PhoneNumberFormat.E164)
                 phones.append(e164)
@@ -142,86 +142,86 @@ def extract_websites(text):
     return list(dict.fromkeys(websites))
 
 def extract_designation(text):
-    entities = ner_model_multi(text)
+    entities = ner_model(text)
     roles_ner = [ent['word'] for ent in entities if ent['entity_group'] in ['TITLE','ROLE','DESIGNATION']]
     role_keywords = [ 'manager', 'developer', 'engineer', 'designer', 'executive', 'head', 'director', 'ceo', 'cto', 'coo', 'founder', 'owner', 'partner', 'analyst', 'consultant', 'associate', 'supervisor', 'lead', 'administrator', 'chairman', 'officer', 'president', 'co-founder', 'marketing', 'hr', 'human resource', 'business development', 'operations', 'finance', 'account', 'trainer', 'architect','leading','estate', 'व्यवस्थापक','संचालक','सहकारी','अध्यक्ष' ]
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     roles_kw = [l for l in lines if any(kw in l.lower() for kw in role_keywords) and '@' not in l and 'www' not in l]
     return list(dict.fromkeys(roles_ner + roles_kw))
 
-# ----------------------------
-# INDIAN ADDRESS EXTRACTION
-# ----------------------------
+# Map Devanagari digits to ASCII
+
 def extract_address(text):
-    text = text.replace('\xa0', ' ').replace('\u200b', '').strip()
+    import re
+
+    # Remove websites
+    text = re.sub(r'http\S+|www\.\S+', '', text)
+
     lines = [l.strip().rstrip(',') for l in text.split("\n") if l.strip()]
+    entities = ner_model(text)
+    locs = [ent['word'] for ent in entities if ent['entity_group'] in ['LOC', 'GPE']]
 
-    # Regex patterns
-    phone_pattern = re.compile(r'\+?\d[\d\s\-\(\)]{6,}\d')
-    pin_pattern = re.compile(r'\b\d{6}\b')  # Indian PIN
-    flat_building_pattern = re.compile(r'^\s*\d+[A-Za-z0-9/\-]*[,]*.*', re.I)
-    street_keywords = ['road','street','st.','lane','nagar','block','sector','bunglow','building','plot','chowk','cross','path']
-    
-    state_list = [
-        'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana',
-        'Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur',
-        'Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana',
-        'Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu and Kashmir','Ladakh',
-        'Puducherry','Chandigarh','Lakshadweep','Andaman and Nicobar'
+    address_keywords = [
+        'road','street','st.','opp','near','city','plot','shop','no.',
+        'floor','wing','india','pincode','sector','lane','bldg',
+        'nagar','block','avenue','distt','tehsil','estate',
+        'centre', 'centrum', 'office',
+        # Marathi address keywords
+        'रोड', 'रस्ता', 'शहर', 'मोहल्ला', 'वाटा', 'पत्ता', 'गल्ला', 'प्लॉट',
+        'बाजार', 'नंबर', 'माळ', 'फ्लॅट', 'मंजूर', 'वि.', 'जमीन', 'संख्या',
+        # Common address starters
+        'flat', 'building', 'shop', 'plot', 'colony', 'area', 'locality', 'station'
     ]
-    country_list = ['India','भारत']
 
-    # Remove phone lines
-    lines = [l for l in lines if not phone_pattern.fullmatch(l.replace(' ','').replace('-',''))]
+    unit_pattern = re.compile(r'^\s*\d+[\/\d\-]*')
+    phone_pattern = re.compile(r'\+?\d[\d\s\-\(\)]{6,}\d')
+    zip_pattern = re.compile(r'\b\d{5,6}\b', re.I)
+    exclude_patterns = re.compile(r'\b(mobile|mob|tel|phone|website|www|email|e-mail|your|formerly|formeriy|as|manager|comfort|sales|subsidiary|executive|officer|secretary)\b', re.I)
 
-    address_lines = []
+    block = []
+    collecting = False
+    stop_after_zip = False
+    zip_lookahead = 2  # lines to continue after pin code
 
-    # Flat/Building number line
-    for l in lines:
-        if flat_building_pattern.match(l):
-            address_lines.append(l)
-            break
+    for i, l in enumerate(lines):
+        lower = l.lower()
 
-    # Street/Area lines
-    for l in lines:
-        if any(kw in l.lower() for kw in street_keywords) and l not in address_lines:
-            address_lines.append(l)
+        if phone_pattern.search(l):
+            continue
 
-    # City and PIN
-    city_line = ''
-    pin_code = ''
-    for l in reversed(lines):
-        pin_match = pin_pattern.search(l)
-        if pin_match:
-            pin_code = pin_match.group()
-            city_line = l.replace(pin_code,'').strip()
-            if city_line:
-                address_lines.append(f"{city_line} {pin_code}")
-            else:
-                address_lines.append(pin_code)
-            break
+        if exclude_patterns.search(l) and not zip_pattern.search(l):
+            continue
 
-    # State
-    for state in state_list:
-        for l in lines:
-            if state.lower() in l.lower() and state not in address_lines:
-                address_lines.append(state)
-                break
+        # Condition to start collecting: address keywords or location words early in text
+        is_address_line = (
+            unit_pattern.search(l)
+            or any(kw in lower for kw in address_keywords)
+            or any(loc.lower() in lower for loc in locs)
+            or zip_pattern.search(l)
+        )
 
-    # Country
-    for country in country_list:
-        for l in lines:
-            if country.lower() in l.lower() and country not in address_lines:
-                address_lines.append(country)
-                break
+        if is_address_line and not collecting:
+            collecting = True
 
-    # Remove duplicates & join
-    final_address = []
-    for l in address_lines:
-        if l and l not in final_address:
-            final_address.append(l)
-    print(final_address)
-    return "\n".join(final_address)
+        if collecting:
+            block.append(l)
+
+            # Check for zip to activate stopping countdown
+            if zip_pattern.search(l):
+                stop_after_zip = True
+                zip_lookahead = 2  # reset lookahead after PIN found
+
+            elif stop_after_zip:
+                if zip_lookahead > 0:
+                    zip_lookahead -= 1
+                else:
+                    break
+
+    address = ", ".join(block)
+    # Clean repeated commas or spaces
+    address = re.sub(r',\s*,+', ', ', address)
+    address = re.sub(r'\s{2,}', ' ', address)
+    return address.strip()
 
 
 # ----------------------------
@@ -240,12 +240,12 @@ def parse_extracted_data(text):
     text_no_phones = text
     for raw in raw_phone_strings:
         text_no_phones = text_no_phones.replace(raw, ' ')
-    print("Text after removing phone numbers:\n", text_no_phones)
+    # print("Text after removing phone numbers:\n", text_no_phones)
 
    
 
     emails = extract_emails(text_no_phones)
-    print("Extracted Emails:", emails)
+    # print("Extracted Emails:", emails)
 
 
     text_no_phones_emails = text_no_phones
@@ -253,13 +253,13 @@ def parse_extracted_data(text):
         text_no_phones_emails = text_no_phones_emails.replace(email, ' ')
     # print("Text after removing emails:\n", text_no_phones_emails)
     websites = extract_websites(text_no_phones_emails)
-    print("Extracted Websites:", websites)
+    # print("Extracted Websites:", websites)
     text_no_websites = text_no_phones_emails
     for site in websites:
         text_no_websites = text_no_websites.replace(site, ' ')
-    print("Text after removing websites:\n", text_no_websites)
+    # print("Text after removing websites:\n", text_no_websites)
     designation = extract_designation(text_no_websites)
-    print("Extracted Designations:", designation)
+    # print("Extracted Designations:", designation)
     text_no_designations = text_no_websites
     for des in designation:
         text_no_designations = text_no_designations.replace(des, ' ')
@@ -268,8 +268,8 @@ def parse_extracted_data(text):
     name = extract_name(text_no_websites)
     company = extract_company(text_no_websites)
 
-    print("Name:", name)
-    print("Company:", company)
+    # print("Name:", name)
+    # print("Company:", company)
 
     return {
         "name": name,

@@ -65,9 +65,9 @@ def upload_card(request):
         else:
             messages.error(request, "No image provided")
             return redirect('new_registration')
-        preprocessed_path = preprocess_image(image_path)
+        # preprocessed_path = preprocess_image(image_path)
 
-        text,_,_= extract_text(preprocessed_path)
+        text,_,_= extract_text(image_path)
         data = parse_extracted_data(text)
         text_lines = [line.strip() for line in text.split('\n') if line.strip()]
 
