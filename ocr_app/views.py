@@ -67,7 +67,7 @@ def upload_card(request):
             return redirect('new_registration')
         # preprocessed_path = preprocess_image(image_path)
 
-        text,_,_= extract_text(image_path)
+        text= extract_text(image_path)
         data = parse_extracted_data(text)
         text_lines = [line.strip() for line in text.split('\n') if line.strip()]
 
@@ -75,6 +75,10 @@ def upload_card(request):
         existing_card = None
         email = data.get('primary_email', '').strip()
         phone = data.get('primary_phone', '').strip()
+        name = data.get('name', '')
+        pr = data.get('primary_name', '')
+        print(name)
+        print("this is the primary name\n",pr)
         if email:
             existing_card = BusinessCard.objects.filter(email=email).first()
         if not existing_card and phone:
@@ -83,7 +87,7 @@ def upload_card(request):
         if existing_card:
             messages.warning(request, "User already exists. Please log in.")
             return redirect('already_registered')
-
+        
         return render(request, 'ocr/register_card.html', {
             'image_url': fs.url(filename),
             'name': data.get('name', ''),
@@ -164,7 +168,7 @@ def login_card(request):
             messages.error(request, "No image provided")
             return redirect('new_registration')
 
-        text, _, _ = extract_text(image_path)
+        text = extract_text(image_path)
         data = parse_extracted_data(text)
         email = data.get('primary_email', '').strip()
         phone = data.get('primary_phone', '').strip()

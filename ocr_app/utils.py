@@ -19,11 +19,9 @@ ner_model = pipeline( "ner",
 # OCR MODEL
 # ----------------------------
 ocr = PaddleOCR(use_angle_cls=False, lang='mr')  # Marathi OCR
-# English OCR
 
-# ----------------------------
-# OCR TEXT EXTRACTION
-# ----------------------------
+
+
 def extract_text(image_path):
     result = ocr.ocr(image_path)
     text_lines = []
@@ -49,8 +47,8 @@ def extract_text(image_path):
 
     # Join all text lines
     text = "\n".join(text_lines)
-    print("Extracted Text:", text)
-    return text, confidence_scores, structured_result
+    # print("Extracted Text:", text)
+    return text
 # ----------------------------
 # CLEAN OCR TEXT
 # ----------------------------
@@ -92,9 +90,32 @@ def clean_ocr_text(text):
 # EXTRACTORS
 # ----------------------------
 def extract_name(text):
-    entities = ner_model(text)
-    names = [ent['word'] for ent in entities if ent['entity_group'] in ['PER', 'PERSON']]
-    return list(dict.fromkeys(names))
+    import re
+
+    # Split text into non-empty lines
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    first_five_lines = "\n".join(lines[:5])
+    print(first_five_lines)
+
+    # --- Extract name from first 5 lines using NER ---
+    entities = ner_model(first_five_lines)
+    names = [ent['word'] for ent in entities if ent['entity_group'] in ['PER', 'PERSON', 'PER']]
+    names = list(dict.fromkeys(names))  # remove duplicates
+
+    # --- Remove lines containing extracted names ---
+    name_keywords = [re.escape(n) for n in names]
+    name_pattern = re.compile("|".join(name_keywords), re.I) if names else None
+
+    remaining_lines = []
+    for i, line in enumerate(lines):
+        if i < 5 and name_pattern and name_pattern.search(line):
+            continue  # skip lines containing detected names
+        remaining_lines.append(line)
+
+    cleaned_text = "\n".join(remaining_lines)
+
+    return list(set(names))
+
 
 def extract_company(text):
     entities = ner_model(text)
@@ -144,7 +165,7 @@ def extract_websites(text):
 def extract_designation(text):
     entities = ner_model(text)
     roles_ner = [ent['word'] for ent in entities if ent['entity_group'] in ['TITLE','ROLE','DESIGNATION']]
-    role_keywords = [ 'manager', 'developer', 'engineer', 'designer', 'executive', 'head', 'director', 'ceo', 'cto', 'coo', 'founder', 'owner', 'partner', 'analyst', 'consultant', 'associate', 'supervisor', 'lead', 'administrator', 'chairman', 'officer', 'president', 'co-founder', 'marketing', 'hr', 'human resource', 'business development', 'operations', 'finance', 'account', 'trainer', 'architect','leading','estate', 'व्यवस्थापक','संचालक','सहकारी','अध्यक्ष' ]
+    role_keywords = [ 'manager', 'developer', 'engineer', 'designer', 'business','leading','executive', 'head', 'director', 'ceo', 'cto', 'coo', 'founder', 'owner', 'partner', 'analyst', 'consultant', 'associate', 'supervisor', 'lead', 'administrator', 'chairman', 'officer', 'president', 'co-founder', 'marketing', 'hr', 'human resource', 'business development', 'operations', 'finance', 'account', 'trainer', 'architect','leading','estate', 'व्यवस्थापक','संचालक','सहकारी','अध्यक्ष' ]
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     roles_kw = [l for l in lines if any(kw in l.lower() for kw in role_keywords) and '@' not in l and 'www' not in l]
     return list(dict.fromkeys(roles_ner + roles_kw))
@@ -158,8 +179,11 @@ def extract_address(text):
     text = re.sub(r'http\S+|www\.\S+', '', text)
 
     lines = [l.strip().rstrip(',') for l in text.split("\n") if l.strip()]
+    print("this is the lines\n", lines)
+
     entities = ner_model(text)
     locs = [ent['word'] for ent in entities if ent['entity_group'] in ['LOC', 'GPE']]
+    print(locs)
 
     address_keywords = [
         'road','street','st.','opp','near','city','plot','shop','no.',
@@ -170,63 +194,48 @@ def extract_address(text):
         'रोड', 'रस्ता', 'शहर', 'मोहल्ला', 'वाटा', 'पत्ता', 'गल्ला', 'प्लॉट',
         'बाजार', 'नंबर', 'माळ', 'फ्लॅट', 'मंजूर', 'वि.', 'जमीन', 'संख्या',
         # Common address starters
-        'flat', 'building', 'shop', 'plot', 'colony', 'area', 'locality', 'station'
+        'flat', 'shop', 'plot', 'colony', 'area', 'locality', 'station'
     ]
 
-    unit_pattern = re.compile(r'^\s*\d+[\/\d\-]*')
     phone_pattern = re.compile(r'\+?\d[\d\s\-\(\)]{6,}\d')
-    zip_pattern = re.compile(r'\b\d{5,6}\b', re.I)
-    exclude_patterns = re.compile(r'\b(mobile|mob|tel|phone|website|www|email|e-mail|your|formerly|formeriy|as|manager|comfort|sales|subsidiary|executive|officer|secretary)\b', re.I)
+    zip_pattern = re.compile(r'\b\d{3}[\s\-]?\d{3}\b')
+    exclude_patterns = re.compile(r'\b(mobile|mob|tel|phone|website|www|email|e-mail|your|formerly|formeriy|as|manager|comfort|sales|subsidiary|executive|officer|secretary|com)\b', re.I)
 
     block = []
     collecting = False
-    stop_after_zip = False
-    zip_lookahead = 2  # lines to continue after pin code
 
-    for i, l in enumerate(lines):
+    for l in lines:
         lower = l.lower()
 
-        if phone_pattern.search(l):
+        # Skip phone numbers and irrelevant lines
+        if phone_pattern.search(l) or exclude_patterns.search(lower):
             continue
 
-        if exclude_patterns.search(l) and not zip_pattern.search(l):
-            continue
+        # Normalize line for ZIP detection
+        line_norm = l.replace('-', ' ').strip()
 
-        # Condition to start collecting: address keywords or location words early in text
-        is_address_line = (
-            unit_pattern.search(l)
-            or any(kw in lower for kw in address_keywords)
-            or any(loc.lower() in lower for loc in locs)
-            or zip_pattern.search(l)
-        )
-
-        if is_address_line and not collecting:
-            collecting = True
+        # Start collecting if line has ZIP OR looks like address (keyword, number, NER location)
+        if not collecting:
+            if zip_pattern.search(line_norm) or any(kw in lower for kw in address_keywords) or any(loc.lower() in lower for loc in locs) or re.search(r'\d+', l):
+                collecting = True
 
         if collecting:
             block.append(l)
 
-            # Check for zip to activate stopping countdown
-            if zip_pattern.search(l):
-                stop_after_zip = True
-                zip_lookahead = 2  # reset lookahead after PIN found
+            # Stop immediately after ZIP line
+            if zip_pattern.search(line_norm):
+                break
 
-            elif stop_after_zip:
-                if zip_lookahead > 0:
-                    zip_lookahead -= 1
-                else:
-                    break
-
+    # Join lines into one address string
     address = ", ".join(block)
     # Clean repeated commas or spaces
     address = re.sub(r',\s*,+', ', ', address)
     address = re.sub(r'\s{2,}', ' ', address)
+
     return address.strip()
 
 
-# ----------------------------
-# PARSE EXTRACTED DATA
-# ----------------------------
+
 def parse_extracted_data(text):
    
     # lines = filter_meaningful_lines(text)
@@ -263,17 +272,41 @@ def parse_extracted_data(text):
     text_no_designations = text_no_websites
     for des in designation:
         text_no_designations = text_no_designations.replace(des, ' ')
-    address = extract_address(text_no_designations)
-    print("Extracted Address:", address)
+    # address = extract_address(text_no_designations)
+    # print("Extracted Address:", address)
+    # name = extract_name(text_no_websites)
+    # company = extract_company(text_no_websites)
+        
     name = extract_name(text_no_websites)
+    
+    print("Name:", name)
     company = extract_company(text_no_websites)
 
-    # print("Name:", name)
-    # print("Company:", company)
+
+    # --- Ensure name is always a list ---
+    if isinstance(name, str):
+        name_list = [name]
+    elif isinstance(name, list):
+        name_list = name
+    else:
+        name_list = []
+
+    primary_name = name_list[0] if name_list else ''
+
+    # Clean name from text
+    text_no_name = text_no_designations
+    for n in name_list:
+        text_no_name = text_no_name.replace(n, '')
+    print("no text", text_no_name)
+
+    address = extract_address(text_no_name)
+    print("Extracted Address:", address)
+
+    print("Company:", company)
 
     return {
         "name": name,
-        "primary_name": name[0] if name else '',
+        "primary_name": name,
         "company": company,
         "primary_company": company[0] if company else '',
         "emails": emails,
