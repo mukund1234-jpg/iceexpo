@@ -16,35 +16,62 @@ import os
 # -----------------------
 
 def preprocess_image(image_path):
-    # Read the image in color
+    """
+    Enhanced preprocessing for OCR — works better on light-print or faint text.
+    """
+    # Read image
     img = cv2.imread(image_path)
     if img is None:
         return None
 
+    # Resize to consistent scale (improves OCR)
+    h, w = img.shape[:2]
+    if max(h, w) < 1000:
+        scale = 1000 / max(h, w)
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Denoise
-    denoised = cv2.bilateralFilter(gray, 9, 75, 75)
+    # --- Step 1: Enhance contrast using CLAHE ---
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
 
-    # Adaptive threshold
+    # --- Step 2: Remove noise (light smooth) ---
+    denoised = cv2.fastNlMeansDenoising(enhanced, None, 15, 7, 21)
+
+    # --- Step 3: Adaptive Threshold with Otsu + Inversion ---
+    # (Helps faint dark text on light backgrounds)
     thresh = cv2.adaptiveThreshold(
         denoised, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11, 2
+        cv2.THRESH_BINARY_INV,  # invert for light text
+        31, 15
     )
 
-    # Adjust contrast/brightness
-    alpha = 1.2
-    beta = 10
-    adjusted = cv2.convertScaleAbs(thresh, alpha=alpha, beta=beta)
+    # --- Step 4: Morphological cleanup (open small noise) ---
+    kernel = np.ones((2, 2), np.uint8)
+    morph = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
 
-    # Save preprocessed image
+    # --- Step 5: Combine with original for fine details ---
+    processed = cv2.bitwise_or(morph, 255 - denoised)
+
+    # --- Step 6: Optional sharpening ---
+    sharpen_kernel = np.array([[0, -1, 0],
+                               [-1, 5, -1],
+                               [0, -1, 0]])
+    sharp = cv2.filter2D(processed, -1, sharpen_kernel)
+
+    # --- Step 7: Save processed image ---
     fs = FileSystemStorage()
     base_name = os.path.basename(image_path)
     filename = f"preprocessed_{base_name}"
-    saved_path = fs.save(filename, ContentFile(cv2.imencode('.jpg', adjusted)[1].tobytes()))
+
+    success, encoded_img = cv2.imencode('.jpg', sharp)
+    if not success:
+        return None
+
+    saved_path = fs.save(filename, ContentFile(encoded_img.tobytes()))
     return fs.path(saved_path)
 
 @csrf_exempt

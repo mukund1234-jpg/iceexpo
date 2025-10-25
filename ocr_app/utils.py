@@ -92,29 +92,52 @@ def clean_ocr_text(text):
 def extract_name(text):
     import re
 
-    # Split text into non-empty lines
+    # Clean and split lines
     lines = [l.strip() for l in text.split("\n") if l.strip()]
-    first_five_lines = "\n".join(lines[:5])
-    print(first_five_lines)
+    first_lines = lines[:10]
 
-    # --- Extract name from first 5 lines using NER ---
-    entities = ner_model(first_five_lines)
-    names = [ent['word'] for ent in entities if ent['entity_group'] in ['PER', 'PERSON', 'PER']]
-    names = list(dict.fromkeys(names))  # remove duplicates
+    text_for_ner = "\n".join(first_lines)
 
-    # --- Remove lines containing extracted names ---
-    name_keywords = [re.escape(n) for n in names]
-    name_pattern = re.compile("|".join(name_keywords), re.I) if names else None
+    # --- Step 1: Run NER if available ---
+    names = []
+    if ner_model:
+        entities = ner_model(text_for_ner, aggregation_strategy="simple")
+        names = [ent["word"].strip() for ent in entities if ent["entity_group"] in ["PER", "PERSON"]]
 
-    remaining_lines = []
-    for i, line in enumerate(lines):
-        if i < 5 and name_pattern and name_pattern.search(line):
-            continue  # skip lines containing detected names
-        remaining_lines.append(line)
+    # --- Step 2: Fallback heuristic if empty ---
+    if not names:
+        for i, line in enumerate(first_lines):
+            if re.search(r"(Pvt|Ltd|LLP|India|Executive|Manager|Sales|Finance|Email|Website|www|Plot|Road|Area|Pin|Maharashtra)", line, re.I):
+                continue
+            # Looks like a person name (alphabetic, 1-3 words)
+            if re.match(r"^[A-Za-z\s]{3,}$", line) and 1 <= len(line.split()) <= 3:
+                # Check next line — maybe continuation like "Bhai", "Kumar"
+                if i + 1 < len(first_lines):
+                    next_line = first_lines[i + 1]
+                    if re.match(r"^[A-Za-z]{2,}$", next_line) and len(next_line.split()) <= 2:
+                        line = f"{line} {next_line}"  # merge
+                names.append(line.strip())
+                break
 
-    cleaned_text = "\n".join(remaining_lines)
+    # --- Step 3: Merge fragmented single-word names ---
+    if len(names) == 1 and len(names[0].split()) == 1:
+        # Try to find possible extension in next 1–2 lines
+        idx = 0
+        for i, l in enumerate(first_lines):
+            if names[0].lower() in l.lower():
+                idx = i
+                break
+        for j in range(idx + 1, min(idx + 3, len(first_lines))):
+            if re.match(r"^[A-Za-z]{2,}$", first_lines[j]) and len(first_lines[j].split()) <= 2:
+                names[0] += " " + first_lines[j]
+                break
 
-    return list(set(names))
+    # Deduplicate
+    names = list(dict.fromkeys(names))
+    return names
+
+
+
 
 
 def extract_company(text):
@@ -132,19 +155,19 @@ def extract_phones(text):
     phones = []
     text_cleaned = re.sub(r'[^\x20-\x7E]', '', text)
     raw_numbers = re.findall(r'\+?\d[\d\s\-\(\)]{6,}\d', text_cleaned)
-    # print("Raw Phone Numbers Found:", raw_numbers)
+    print("Raw Phone Numbers Found:", raw_numbers)
     for num in raw_numbers:
         cleaned = re.sub(r'[^\d\+]', '', num)
         try:
             match = phonenumbers.parse(cleaned, "IN")
-            # print("Parsed Phone Number:", match)
+            #print("Parsed Phone Number:", match)
             if phonenumbers.is_valid_number(match):
                 e164 = phonenumbers.format_number(match, phonenumbers.PhoneNumberFormat.E164)
                 phones.append(e164)
         except:
             continue
-        # print("Extracted Phones:", phones)
-        # print("Raw Phone Strings:", raw_numbers)
+        print("Extracted Phones:", phones)
+        print("Raw Phone Strings:", raw_numbers)
     return list(set(phones)), raw_numbers 
 
 def extract_emails(text):
@@ -199,7 +222,7 @@ def extract_address(text):
 
     phone_pattern = re.compile(r'\+?\d[\d\s\-\(\)]{6,}\d')
     zip_pattern = re.compile(r'\b\d{3}[\s\-]?\d{3}\b')
-    exclude_patterns = re.compile(r'\b(mobile|mob|tel|phone|website|www|email|e-mail|your|formerly|formeriy|as|manager|comfort|sales|subsidiary|executive|officer|secretary|com)\b', re.I)
+    exclude_patterns = re.compile(r'\b(mobile|mob|tel|phone|website|www|email|e-mail|your|formerly|formeriy|as|manager|comfort|sales|subsidiary|executive|officer|secretary|com|of)\b', re.I)
 
     block = []
     collecting = False
@@ -237,14 +260,14 @@ def extract_address(text):
 
 
 def parse_extracted_data(text):
-   
+    
+
+
     # lines = filter_meaningful_lines(text)
     phones, raw_phone_strings = extract_phones(text)
     # print("Extracted Phones:", phones)
-
     text = clean_ocr_text(text)
     print("Cleaned OCR Text:\n", text)
-
 
     text_no_phones = text
     for raw in raw_phone_strings:
@@ -306,7 +329,7 @@ def parse_extracted_data(text):
 
     return {
         "name": name,
-        "primary_name": name,
+        "primary_name": primary_name,
         "company": company,
         "primary_company": company[0] if company else '',
         "emails": emails,
