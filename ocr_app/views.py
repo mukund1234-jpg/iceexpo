@@ -11,7 +11,13 @@ import base64
 import cv2
 import numpy as np
 import os
-# -----------------------
+import uuid
+import time
+import qrcode
+import pandas as pd
+from django.conf import settings
+
+from django.http import JsonResponse
 # Upload and OCR Extract
 # -----------------------
 
@@ -73,50 +79,55 @@ def preprocess_image(image_path):
 
     saved_path = fs.save(filename, ContentFile(encoded_img.tobytes()))
     return fs.path(saved_path)
+import requests
+
 
 @csrf_exempt
 def upload_card(request):
+    total_users = 0
     if request.method == 'POST':
         fs = FileSystemStorage()
-        if request.FILES.get('up_image'):
-            img = request.FILES['up_image']
-            filename = fs.save(img.name, img)
-            image_path = fs.path(filename)
-            
-        elif request.POST.get('webcam_image'):
+        if request.POST.get('webcam_image'):
             _, imgstr = request.POST['webcam_image'].split(';base64,')
             image_bytes = base64.b64decode(imgstr)
-            filename = 'webcam_card.jpg'
-            image_path = fs.save(filename, ContentFile(image_bytes))
+            unique_filename = f"webcam_{uuid.uuid4().hex}.jpg"
+            image_path = fs.save(unique_filename, ContentFile(image_bytes))
             image_path = fs.path(image_path)
         else:
             messages.error(request, "No image provided")
             return redirect('new_registration')
+
+        start_time = time.time()
+
+        # (Optional preprocessing)
         # preprocessed_path = preprocess_image(image_path)
 
-        text= extract_text(image_path)
+        # Extract text via OCR
+        text = extract_text(image_path)
+        ocr_time = time.time()
+        print(f"OCR Extraction Time: {ocr_time - start_time:.2f} seconds")
+       
+
+        # Parse structured data (phones, emails, etc.)
         data = parse_extracted_data(text)
+        parse_time = time.time()
+        print(f"Data Parsing Time: {parse_time - ocr_time:.2f} seconds")
+
+        total_time = parse_time - start_time
+        print(f"Total Processing Time: {total_time:.2f} seconds")
+
         text_lines = [line.strip() for line in text.split('\n') if line.strip()]
 
-        # Check if card already exists
-        existing_card = None
-        email = data.get('primary_email', '').strip()
-        phone = data.get('primary_phone', '').strip()
-        name = data.get('name', '')
-        pr = data.get('primary_name', '')
-        print(name)
-        print("this is the primary name\n",pr)
-        if email:
-            existing_card = BusinessCard.objects.filter(email=email).first()
-        if not existing_card and phone:
-            existing_card = BusinessCard.objects.filter(phone=phone).first()
 
-        if existing_card:
-            messages.warning(request, "User already exists. Please log in.")
-            return redirect('already_registered')
-        
+        excel_file = os.path.join(settings.MEDIA_ROOT, 'business_cards.xlsx')
+        if os.path.exists(excel_file):
+            df_existing = pd.read_excel(excel_file)
+            total_users = len(df_existing)
+        else:
+            total_users = 0
+        print(f"Total users before registration: {total_users}")
+
         return render(request, 'ocr/register_card.html', {
-            'image_url': fs.url(filename),
             'name': data.get('name', ''),
             'primary_name': data.get('primary_name', ''),
             'text_lines': text_lines,
@@ -129,146 +140,97 @@ def upload_card(request):
             'company': data.get('company', ''),
             'primary_company': data.get('primary_company', ''),
             'address': data.get('address', ''),
+            'processing_time': f"{total_time:.2f} seconds",
+            'total': total_users 
         })
+    excel_file = os.path.join(settings.MEDIA_ROOT, 'business_cards.xlsx')
+    if os.path.exists(excel_file):
+        total_users = len(pd.read_excel(excel_file))
+    return render(request, 'ocr/register_card.html', {'total': total_users})
 
-    return render(request, 'ocr/register_card.html')
 
-# -----------------------
-# Register Card / User
-# -----------------------
+
 @csrf_exempt
 def register_card(request):
+    # 📁 Paths
+    excel_file = os.path.join(settings.MEDIA_ROOT, 'business_cards.xlsx')
+    qr_folder = os.path.join(settings.MEDIA_ROOT, 'qr_codes')
+    os.makedirs(qr_folder, exist_ok=True)
+
+    # 🧾 Load existing Excel or create new
+    if os.path.exists(excel_file):
+        df_existing = pd.read_excel(excel_file)
+        df_existing.columns = df_existing.columns.str.strip()
+        df_existing.rename(columns={'QR Code': 'QR_Code'}, inplace=True)
+    else:
+        df_existing = pd.DataFrame(columns=[
+            'UID', 'Name', 'Email', 'Phone', 'Company', 
+            'Designation', 'Category', 'Address', 'QR_Code'
+        ])
+        df_existing.to_excel(excel_file, index=False)
+
+    # 🔢 Get total user count
+    total_users = len(df_existing)
+
     if request.method == 'POST':
+
         name = request.POST.get('name', '').strip()
         email = request.POST.get('email', '').strip()
         phone = request.POST.get('phone', '').strip()
+        designation = request.POST.get('designation', '').strip()
+        category = request.POST.get('category', '').strip()
         company = request.POST.get('company', '').strip()
         address = request.POST.get('address', '').strip()
-        image_file = request.FILES.get('image')
 
-        # Check if card/user already exists
-        existing_card = None
-        if email:
-            existing_card = BusinessCard.objects.filter(email=email).first()
-        if not existing_card and phone:
-            existing_card = BusinessCard.objects.filter(phone=phone).first()
+        uid = str(uuid.uuid4().hex[:6]).upper()
 
-        if existing_card:
-            messages.info(request, "User already registered. Please log in.")
-            return redirect('already_registered')
-
-        # Create BusinessCard as user
-        card = BusinessCard.objects.create_user(
-            email=email if email else None,
-            phone=phone if phone else None,
-            password=phone,  # Default password is phone
-            name=name,
-            company=company,
-            address=address,
-            image=image_file
+        # 🧾 Create QR content
+        qr_data = (
+            f" {uid}\n"
+            f"{name}\n {email}\n {phone}\n"
+            f" {designation}\n {category}\n"
+            f" {company}\n {address}"
         )
+        qr_filename = f"{uid}_QR.png"
+        qr_path = os.path.join(qr_folder, qr_filename)
+        qrcode.make(qr_data).save(qr_path)
 
-        login(request, card)
-        messages.success(request, f"Registered Successfully as {card.name}")
-        return redirect('profile_page')
+        # 🆕 Add new entry
+        new_row = pd.DataFrame([{
+            'UID': uid,
+            'Name': name,
+            'Email': email,
+            'Phone': phone,
+            'Designation': designation,
+            'Category': category,
+            'Company': company,
+            'Address': address,
+            'QR_Code': f"qr_codes/{qr_filename}"
+        }])
 
-    return redirect('new_registration')
+        df_existing = pd.concat([df_existing, new_row], ignore_index=True)
+        df_existing.to_excel(excel_file, index=False)
 
-# -----------------------
-# Login via OCR / Image
-# -----------------------
-@csrf_exempt
-def login_card(request):
-    if request.method == 'POST':
-        fs = FileSystemStorage()
-        if request.POST.get('webcam_image'):
-            _, imgstr = request.POST['webcam_image'].split(';base64,')
-            image_bytes = base64.b64decode(imgstr)
-            filename = 'login_card.jpg'
-            image_path = fs.save(filename, ContentFile(image_bytes))
-            image_path = fs.path(image_path)
-        elif request.FILES.get('card_image'):
-            img = request.FILES['card_image']
-            filename = fs.save(img.name, img)
-            image_path = fs.path(filename)
-        else:
-            messages.error(request, "No image provided")
-            return redirect('new_registration')
+        total_users = len(df_existing)
 
-        text = extract_text(image_path)
-        data = parse_extracted_data(text)
-        email = data.get('primary_email', '').strip()
-        phone = data.get('primary_phone', '').strip()
+        # 📤 Pass data to template
+        user = {
+            'UID': uid,
+            'Name': name,
+            'Email': email,
+            'Phone': phone,
+            'Designation': designation,
+            'Category': category,
+            'Company': company,
+            'Address': address,
+            'QR_URL': f"{settings.MEDIA_URL}qr_codes/{qr_filename}",
+        }
 
-        # Authenticate by email or phone
-        card = None
-        if email:
-            card = BusinessCard.objects.filter(email=email).first()
-        if not card and phone:
-            card = BusinessCard.objects.filter(phone=phone).first()
+        return render(request, 'ocr/pass.html', {'user': user, 'total': total_users})
 
-        if not card:
-            messages.error(request, "User not registered. Please register first.")
-            return redirect('new_registration')
-
-        # Log in
-        login(request, card)
-        messages.success(request, f"Logged in as {card.name}")
-        return redirect('profile_page')
-
-    return render(request, 'ocr/login_card.html')
-
-# -----------------------
-# Login via identifier (email/phone)
-# -----------------------
-@csrf_exempt
-def login_after_card(request):
-    if request.method == 'POST':
-        identifier = request.POST.get('identifier', '').strip()
-        if not identifier:
-            messages.error(request, "Please enter your Email or Phone number.")
-            return redirect('login_after_card')
-
-        email = identifier if '@' in identifier else None
-        phone = None
-        if not email:
-            phone_clean = identifier.replace(" ", "").replace("-", "")
-            if phone_clean.startswith('+') or phone_clean.isdigit():
-                phone = '+91' + phone_clean if len(phone_clean) == 10 else phone_clean
-
-        card = None
-        if email:
-            card = BusinessCard.objects.filter(email=email).first()
-        elif phone:
-            card = BusinessCard.objects.filter(phone=phone).first()
-
-        if not card:
-            messages.error(request, "User not registered. Please register first.")
-            return redirect('new_registration')
-
-        login(request, card)
-        messages.success(request, f"Logged in successfully as {card.name}")
-        return redirect('profile_page')
-
-    return render(request, 'ocr/login_after_card.html')
-
-# -----------------------
-# Main page
-# -----------------------
+    return render(request, 'ocr/register_card.html', {'total': total_users})
 def main_page(request):
     return render(request, 'ocr/main_page.html')
 
-# -----------------------
-# Profile page
-# -----------------------
-@login_required
-def profile(request):
-    card = request.user  # BusinessCard is the user now
-    return render(request, 'ocr/profile.html', {'card': card})
 
 
-@login_required
-def logout_view(request):
-    logout(request)
-    messages.info(request, "You have been logged out.")
-    return redirect('already_registered')

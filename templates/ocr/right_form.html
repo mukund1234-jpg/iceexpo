@@ -1,6 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ✅ Bootstrap Icons CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+<style>
+
+
+    .card {
+        border: none;
+        border-radius: 12px;
+    }
+
+    .card-header {
+        background-color: #5c6fff;
+        border-radius: 12px 12px 0 0;
+    }
+
+    .btn-success {
+        background-color: #5c6fff;
+        border: none;
+        transition: 0.3s;
+    }
+
+    .btn-success:hover {
+        background-color: #7a8cff;
+    }
+</style>
+
 <div class="col-md-12 mb-4">
     <div class="card shadow-sm border-0">
-        <div class="card-header bg-success text-white text-center">
+        <div class="card-header text-white text-center">
             <h5 class="mb-0">About Card Information</h5>
             {% if detected_lang %}
             <span class="badge bg-light text-dark">Detected: {{ detected_lang|upper }}</span>
@@ -12,7 +42,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="filename" value="{{ filename }}">
 
-                <!-- Full Name -->
+                <!-- Name -->
                 <div class="mb-3">
                     {% if name and name|length > 1 %}
                     <div class="input-group">
@@ -23,11 +53,38 @@
                             {% endfor %}
                         </select>
                         <input type="text" id="name-input" name="name" class="form-control"
-                               value="{{ primary_name }}" placeholder="Full Name">
+                               value="{{ primary_name }}" placeholder="Full Name" required>
+                        <span class="input-group-text"><i class="bi bi-person"></i></span>
                     </div>
                     {% else %}
-                    <input type="text" id="name-input" name="name" class="form-control"
-                           value="{{ primary_name }}" placeholder="Full Name">
+                    <div class="input-group">
+                        <input type="text" id="name-input" name="name" class="form-control"
+                               value="{{ primary_name }}" placeholder="Full Name" required>
+                        <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Company -->
+                <div class="mb-3">
+                    {% if company and company|length > 1 %}
+                    <div class="input-group">
+                        <select class="form-select" onchange="document.getElementById('company-input').value = this.value">
+                            <option value="">Select company</option>
+                            {% for c in company %}
+                            <option value="{{ c }}" {% if c == primary_company %}selected{% endif %}>{{ c }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" id="company-input" name="company" class="form-control"
+                               value="{{ primary_company }}" placeholder="Company Name" required>
+                        <span class="input-group-text"><i class="bi bi-building"></i></span>
+                    </div>
+                    {% else %}
+                    <div class="input-group">
+                        <input type="text" id="company-input" name="company" class="form-control"
+                               value="{{ primary_company }}" placeholder="Company Name" required>
+                        <span class="input-group-text"><i class="bi bi-building"></i></span>
+                    </div>
                     {% endif %}
                 </div>
 
@@ -43,55 +100,31 @@
                         </select>
                         <input type="text" id="de-input" name="designation" class="form-control"
                                value="{{ primary_designation }}" placeholder="Designation">
+                        <span class="input-group-text"><i class="bi bi-briefcase"></i></span>
                     </div>
                     {% else %}
-                    <input type="text" id="de-input" name="designation" class="form-control"
-                           value="{{ primary_designation }}" placeholder="Designation">
-                    {% endif %}
-                </div>
-
-                <!-- Company -->
-                <div class="mb-3">
-                    {% if company and company|length > 1 %}
                     <div class="input-group">
-                        <select class="form-select" onchange="document.getElementById('company-input').value = this.value">
-                            <option value="">Select company</option>
-                            {% for c in company %}
-                            <option value="{{ c }}" {% if c == primary_company %}selected{% endif %}>{{ c }}</option>
-                            {% endfor %}
-                        </select>
-                        <input type="text" id="company-input" name="company" class="form-control"
-                               value="{{ primary_company }}" placeholder="Company Name">
+                        <input type="text" id="de-input" name="designation" class="form-control"
+                               value="{{ primary_designation }}" placeholder="Designation" required>
+                        <span class="input-group-text"><i class="bi bi-briefcase"></i></span>
                     </div>
-                    {% else %}
-                    <input type="text" id="company-input" name="company" class="form-control"
-                           value="{{ primary_company }}" placeholder="Company Name">
                     {% endif %}
                 </div>
 
-                <!-- Address -->
+                <!-- Category -->
                 <div class="mb-3">
-                    <input type="text" id="address-input" name="address" class="form-control"
-                           value="{{ address }}" placeholder="Address">
-                </div>
-
-                <!-- Email -->
-                <div class="mb-3">
-                    {% if emails and emails|length > 1 %}
                     <div class="input-group">
-                        <select class="form-select" onchange="document.getElementById('email-input').value = this.value">
-                            <option value="">Select email</option>
-                            {% for e in emails %}
-                            <option value="{{ e }}" {% if e == primary_email %}selected{% endif %}>{{ e }}</option>
-                            {% endfor %}
+                        <select id="category-input" name="category" class="form-select" required>
+                            <option selected disabled value="">Select Category</option>
+                            <option value="Architect">Architect</option>
+                            <option value="Interior Designer">Interior Designer</option>
+                            <option value="Builder">Builder</option>
+                            <option value="Trade Visitor">Trade Visitor</option>
+                            <option value="Dealer">Dealer</option>
+                            <option value="Distributor">Distributor</option>
                         </select>
-                        <input type="email" id="email-input" name="email" class="form-control"
-                               value="{{ primary_email }}" placeholder="example@email.com">
+                        <span class="input-group-text"><i class="bi bi-tags"></i></span>
                     </div>
-                    {% else %}
-                    <input type="email" id="email-input" name="email" class="form-control"
-                           value="{{ primary_email }}" placeholder="example@email.com">
-                    {% endif %}
                 </div>
 
                 <!-- Phone -->
@@ -105,12 +138,48 @@
                             {% endfor %}
                         </select>
                         <input type="text" id="phone-input" name="phone" class="form-control"
-                               value="{{ primary_phone }}" placeholder="Phone Number">
+                               value="{{ primary_phone }}" placeholder="Phone Number" required>
+                        <span class="input-group-text"><i class="bi bi-telephone"></i></span>
                     </div>
                     {% else %}
-                    <input type="text" id="phone-input" name="phone" class="form-control"
-                           value="{{ primary_phone }}" placeholder="Phone Number">
+                    <div class="input-group">
+                        <input type="text" id="phone-input" name="phone" class="form-control"
+                               value="{{ primary_phone }}" placeholder="Phone Number" required>
+                        <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+                    </div>
                     {% endif %}
+                </div>
+
+                <!-- Email -->
+                <div class="mb-3">
+                    {% if emails and emails|length > 1 %}
+                    <div class="input-group">
+                        <select class="form-select" onchange="document.getElementById('email-input').value = this.value">
+                            <option value="">Select email</option>
+                            {% for e in emails %}
+                            <option value="{{ e }}" {% if e == primary_email %}selected{% endif %}>{{ e }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="email" id="email-input" name="email" class="form-control"
+                               value="{{ primary_email }}" placeholder="example@email.com" required>
+                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                    </div>
+                    {% else %}
+                    <div class="input-group">
+                        <input type="email" id="email-input" name="email" class="form-control"
+                               value="{{ primary_email }}" placeholder="example@email.com" required>
+                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Address -->
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" id="address-input" name="address" class="form-control"
+                               value="{{ address }}" placeholder="Address" required>
+                        <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                    </div>
                 </div>
 
                 <button type="submit" class="btn btn-success w-50">Save</button>
@@ -118,3 +187,5 @@
         </div>
     </div>
 </div>
+
+{% endblock %}

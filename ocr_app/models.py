@@ -37,7 +37,7 @@ class BusinessCard(AbstractBaseUser, PermissionsMixin):
     company = models.CharField(max_length=100, blank=True)
     address = models.TextField(blank=True)
     extracted_text = models.TextField(blank=True)
-
+    qr_image = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     # Permissions
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

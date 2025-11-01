@@ -2,25 +2,13 @@ import re
 import phonenumbers
 from paddleocr import PaddleOCR
 from transformers import pipeline
-import spacy
-
-# ----------------------------
-# NER MODELS
-# ----------------------------
-# English NER (optional)
-nlp = spacy.load("en_core_web_sm")
-
-# Multilingual NER (supports Marathi, Hindi, English, etc.)
+# Load NER model
 ner_model = pipeline( "ner", 
                            model="Davlan/xlm-roberta-large-ner-hrl",
                             aggregation_strategy="simple" )
 
-# ----------------------------
-# OCR MODEL
-# ----------------------------
-ocr = PaddleOCR(use_angle_cls=False, lang='mr')  # Marathi OCR
-
-
+#OCR model
+ocr = PaddleOCR(use_angle_cls=False, lang='hi')  # Marathi OCR
 
 def extract_text(image_path):
     result = ocr.ocr(image_path)
@@ -32,33 +20,30 @@ def extract_text(image_path):
     for page in result:  # result is a list with one dict per page/image
         rec_texts = page.get('rec_texts', [])
         # print("Recognized Texts:", rec_texts)
-        rec_scores = page.get('rec_scores', [])
-        rec_boxes = page.get('rec_boxes', [])
+        # rec_scores = page.get('rec_scores', [])
+        # rec_boxes = page.get('rec_boxes', [])
 
         page_structured = []
         for i, text in enumerate(rec_texts):
-            score = rec_scores[i] if i < len(rec_scores) else 0.0
-            bbox = rec_boxes[i] if i < len(rec_boxes) else None
-            page_structured.append([bbox, (text, score)])
+            # score = rec_scores[i] if i < len(rec_scores) else 0.0
+            # bbox = rec_boxes[i] if i < len(rec_boxes) else None
+            # page_structured.append([bbox, (text, score)])
             text_lines.append(text)
-            confidence_scores.append(score)
+            # confidence_scores.append(score)
 
-        structured_result.append(page_structured)
+        # structured_result.append(page_structured)
 
     # Join all text lines
     text = "\n".join(text_lines)
-    # print("Extracted Text:", text)
     return text
-# ----------------------------
-# CLEAN OCR TEXT
-# ----------------------------
+
 def clean_ocr_text(text):
     junk_patterns = [
         r'^[\W_]+$',                # only punctuation or symbols
         r'^[eE\s]+$',               # just "e" or "E" or spaces
         r'^[wy]+$',                 # random isolated letters
         r'^[\|\[\]\{\}\<\>]+$',     # only brackets
-        r'^[a-zA-Z]{1,3}$',         # short random English chars
+        r'^[a-zA-Z]{1,2}$',         # short random English chars
         r'^[\u0900-\u097F]{1,2}$',  # very short Marathi/Hindi fragments
     ]
 
@@ -86,9 +71,7 @@ def clean_ocr_text(text):
 
     return "\n".join(cleaned_lines)
 
-# ----------------------------
-# EXTRACTORS
-# ----------------------------
+
 def extract_name(text):
     import re
 
@@ -153,22 +136,31 @@ def extract_company(text):
 
 def extract_phones(text):
     phones = []
-    text_cleaned = re.sub(r'[^\x20-\x7E]', '', text)
-    raw_numbers = re.findall(r'\+?\d[\d\s\-\(\)]{6,}\d', text_cleaned)
-    print("Raw Phone Numbers Found:", raw_numbers)
+    text_cleaned = re.sub(r'[^\x20-\x7E]', ' ', text)
+    text_cleaned = re.sub(r'\s+', ' ', text_cleaned)
+
+    # Step 2: Fix spaced-out digits like "9324 16 35 64 8" → "93241635648"
+    # This merges groups of digits separated only by spaces or newlines
+    text_cleaned = re.sub(r'(\d[\s\-]{1,3})(?=\d)', lambda m: m.group(0).replace(' ', '').replace('-', ''), text_cleaned)
+
+    # Step 3: Handle multiple numbers joined together
+    text_cleaned = re.sub(r'(?<=\d)[\-\s]*(?=\+?91\s*\d)', ' | ', text_cleaned)
+
+    # Step 4: Find possible numbers
+    raw_numbers = re.findall(
+        r'(?:\+91[\s\-]?\d{8,12}|91[\s\-]?\d{8,12}|\b\d{10,12}\b)',
+        text_cleaned
+    )
     for num in raw_numbers:
         cleaned = re.sub(r'[^\d\+]', '', num)
         try:
             match = phonenumbers.parse(cleaned, "IN")
-            #print("Parsed Phone Number:", match)
             if phonenumbers.is_valid_number(match):
                 e164 = phonenumbers.format_number(match, phonenumbers.PhoneNumberFormat.E164)
                 phones.append(e164)
         except:
             continue
-        print("Extracted Phones:", phones)
-        print("Raw Phone Strings:", raw_numbers)
-    return list(set(phones)), raw_numbers 
+    return list(set(phones)), raw_numbers
 
 def extract_emails(text):
     email_pattern = re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(?:com|co\.in|in|org|net|biz|info|edu|io|gov)\b', re.I)
@@ -193,7 +185,7 @@ def extract_designation(text):
     roles_kw = [l for l in lines if any(kw in l.lower() for kw in role_keywords) and '@' not in l and 'www' not in l]
     return list(dict.fromkeys(roles_ner + roles_kw))
 
-# Map Devanagari digits to ASCII
+
 
 def extract_address(text):
     import re
@@ -202,11 +194,8 @@ def extract_address(text):
     text = re.sub(r'http\S+|www\.\S+', '', text)
 
     lines = [l.strip().rstrip(',') for l in text.split("\n") if l.strip()]
-    print("this is the lines\n", lines)
-
     entities = ner_model(text)
     locs = [ent['word'] for ent in entities if ent['entity_group'] in ['LOC', 'GPE']]
-    print(locs)
 
     address_keywords = [
         'road','street','st.','opp','near','city','plot','shop','no.',
@@ -261,52 +250,26 @@ def extract_address(text):
 
 def parse_extracted_data(text):
     
-
-
-    # lines = filter_meaningful_lines(text)
-    phones, raw_phone_strings = extract_phones(text)
-    # print("Extracted Phones:", phones)
     text = clean_ocr_text(text)
-    print("Cleaned OCR Text:\n", text)
-
+    phones, raw_phone_strings = extract_phones(text)
     text_no_phones = text
     for raw in raw_phone_strings:
         text_no_phones = text_no_phones.replace(raw, ' ')
-    # print("Text after removing phone numbers:\n", text_no_phones)
-
-   
-
     emails = extract_emails(text_no_phones)
-    # print("Extracted Emails:", emails)
-
-
     text_no_phones_emails = text_no_phones
     for email in emails:
         text_no_phones_emails = text_no_phones_emails.replace(email, ' ')
-    # print("Text after removing emails:\n", text_no_phones_emails)
     websites = extract_websites(text_no_phones_emails)
-    # print("Extracted Websites:", websites)
     text_no_websites = text_no_phones_emails
     for site in websites:
         text_no_websites = text_no_websites.replace(site, ' ')
-    # print("Text after removing websites:\n", text_no_websites)
     designation = extract_designation(text_no_websites)
-    # print("Extracted Designations:", designation)
     text_no_designations = text_no_websites
     for des in designation:
         text_no_designations = text_no_designations.replace(des, ' ')
-    # address = extract_address(text_no_designations)
-    # print("Extracted Address:", address)
-    # name = extract_name(text_no_websites)
-    # company = extract_company(text_no_websites)
         
     name = extract_name(text_no_websites)
-    
-    print("Name:", name)
     company = extract_company(text_no_websites)
-
-
-    # --- Ensure name is always a list ---
     if isinstance(name, str):
         name_list = [name]
     elif isinstance(name, list):
@@ -315,18 +278,10 @@ def parse_extracted_data(text):
         name_list = []
 
     primary_name = name_list[0] if name_list else ''
-
-    # Clean name from text
     text_no_name = text_no_designations
     for n in name_list:
         text_no_name = text_no_name.replace(n, '')
-    print("no text", text_no_name)
-
     address = extract_address(text_no_name)
-    print("Extracted Address:", address)
-
-    print("Company:", company)
-
     return {
         "name": name,
         "primary_name": primary_name,
